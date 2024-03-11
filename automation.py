@@ -6,11 +6,13 @@ from pynput import mouse, keyboard
 from PIL import Image, ImageChops, ImageGrab
 import numpy as np
 
+
+# TODO: ordina questo macello
 csv_path = "results.csv"
 
 with open(csv_path, "w") as file:
-    # Clean the csv
-    pass
+    c_writer = csv.writer(file)
+    c_writer.writerow(["Date", "Time", "Bet amount", "Bet outcome", "P of this eoutcome"])
 
 BETTING_POS = (1476, 878)
 GIRO_VELOCE = (496, 961)
@@ -38,12 +40,13 @@ program_stopped = False
 
 fibonacci = [1, 1, 2, 3, 5, 8, 13, 21, 34, 55, 89, 144, 233, 377, 610, 987, 1597, 2584, 4184]
 bet_amount_idx = 0
-
+previous_bet_info = []
+win_prob = 12/37
 
 def get_current_datetime():
     current_date = time.strftime("%d/%m/%y")
     current_time = time.strftime("%H:%M:%S")
-    return (current_date, current_time)
+    return current_date, current_time
 
 
 def capture_screen():
@@ -57,6 +60,8 @@ def key_pressed(key):
     try:
         if key.char == "e":
             print(f"Program stopped by E")
+            # Salvo l'ultima giocata
+            compute_outcome()
             os._exit(1)
 
         elif key.char == "r":
@@ -65,7 +70,6 @@ def key_pressed(key):
                 print(f"Program paused by R")
             else:
                 e.set()
-
                 print(f"Program resumed by R")
             program_running = not program_running
     except AttributeError:
@@ -91,27 +95,44 @@ def click_n_times(mouse_c, num, delay):
         time.sleep(delay)
 
 
+'''
+Questa procedura resetta l'indice nel caso in cui si e' verificata una vincita.
+Inoltre calcola la probabilita' e salva nell'excel il risultato della giocata
+'''
+def compute_outcome():
+    global bet_amount_idx, previous_bet_info
+
+    if previous_bet_info:   # list is not empty
+        last_bet_amount = fibonacci[bet_amount_idx - 1]
+        outcome_prob = (1-win_prob)**bet_amount_idx
+        if not did_bet_lost():
+            outcome_prob = outcome_prob / (1-win_prob) * win_prob
+            bet_amount_idx = 0
+            # Bet won, profit two times the bet
+            last_bet_amount *= -2
+        previous_bet_info.append(last_bet_amount * (-1))
+        previous_bet_info.append(outcome_prob * 100)
+        with open(csv_path, "a", newline="") as csv_file:
+            writer = csv.writer(csv_file)
+            writer.writerow(previous_bet_info)
+
 def place_bet(mouse_c):
-    global bet_amount_idx
-    last_bet_amount = fibonacci[bet_amount_idx]
-    if not did_bet_lost():
-        bet_amount_idx = 0
-        last_bet_amount *= -1
+    global bet_amount_idx, previous_bet_info
+
+    # Excel population and index reset
+    compute_outcome()
+
     mouse_c.position = BETTING_POS
     # Click con delay
     click_n_times(mouse_c, fibonacci[bet_amount_idx], 0.1)
-    # mouse_c.click(mouse.Button.left, fibonacci[bet_amount_idx])
 
     mouse_c.position = GIRO_VELOCE
     mouse_c.click(mouse.Button.left, 1)
 
-    mouse_c.position = (GIRO_VELOCE[0] - 200, GIRO_VELOCE[1] - 200)
+    mouse_c.position = (GIRO_VELOCE[0] + 200, GIRO_VELOCE[1] - 200)
 
-    # TODO: risolvi il problema della della vittoria e perdita che viene segnata male
-    with open(csv_path, "a", newline="") as csv_file:
-        writer = csv.writer(csv_file)
-        current_date, current_time = get_current_datetime()
-        writer.writerow([current_date, current_time, fibonacci[bet_amount_idx], last_bet_amount * (-1)])
+    current_date, current_time = get_current_datetime()
+    previous_bet_info = [current_date, current_time, fibonacci[bet_amount_idx]]
 
     bet_amount_idx += 1
 
@@ -143,5 +164,6 @@ def main():
         listener.join()
 
 
+# TODO: trova un modo per memorizzare anche l'ultima bet senza doverne fare ancora uno (if end -> dump array of previous outcome)
 if __name__ == "__main__":
     main()
